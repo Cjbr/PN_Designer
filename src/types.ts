@@ -5,6 +5,7 @@ export interface Port {
   name: string;
   type: 'ETHERNET' | 'POWER' | 'FIBER';
   label: string;
+  side?: 'left' | 'right' | 'bottom';
 }
 
 export interface DeviceMetadata {

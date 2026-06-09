@@ -4,6 +4,8 @@ import { Device, Connection, DeviceType, Port } from './types';
 import { generateNextIP } from './lib/utils';
 
 interface DesignerStore {
+  projectName: string;
+  setProjectName: (name: string) => void;
   devices: Device[];
   connections: Connection[];
   selectedId: string | null;
@@ -11,6 +13,7 @@ interface DesignerStore {
   showGrid: boolean;
   subnetBase: string;
   addDevice: (template: any, x: number, y: number) => void;
+  duplicateDevice: (id: string) => void;
   updateDevice: (id: string, updates: Partial<Device>) => void;
   removeDevice: (id: string) => void;
   addConnection: (fromId: string, fromPortId: string, toId: string, toPortId: string) => void;
@@ -22,6 +25,8 @@ interface DesignerStore {
 }
 
 export const useStore = create<DesignerStore>((set, get) => ({
+  projectName: 'Project_H2_Refinery',
+  setProjectName: (name) => set({ projectName: name }),
   devices: [],
   connections: [],
   selectedId: null,
@@ -34,8 +39,15 @@ export const useStore = create<DesignerStore>((set, get) => ({
     const existingIps = devices.map(d => d.network.ipAddress);
     const nextIp = generateNextIP(existingIps, get().subnetBase);
 
-    const portsList = template.ports || [];
-    const minHeight = 72 + portsList.length * 24 + 18;
+    const portsList = (template.ports || []).map((p: any) => ({
+      ...p,
+      side: p.side || 'left'
+    }));
+    const leftPorts = portsList.filter((p: any) => p.side === 'left');
+    const rightPorts = portsList.filter((p: any) => p.side === 'right');
+    const bottomPorts = portsList.filter((p: any) => p.side === 'bottom');
+    const maxVerticalPorts = Math.max(leftPorts.length, rightPorts.length);
+    const minHeight = 85 + maxVerticalPorts * 24 + (bottomPorts.length > 0 ? 30 : 18);
     const finalHeight = Math.max(template.height || 140, minHeight);
     const finalWidth = template.width || 140;
 
@@ -66,6 +78,55 @@ export const useStore = create<DesignerStore>((set, get) => ({
     };
 
     set(state => ({ devices: [...state.devices, newDevice] }));
+  },
+
+  duplicateDevice: (id) => {
+    const devices = get().devices;
+    const source = devices.find(d => d.id === id);
+    if (!source) return;
+
+    const existingIps = devices.map(d => d.network.ipAddress);
+    const nextIp = generateNextIP(existingIps, get().subnetBase);
+
+    let tagNum = devices.length + 1;
+    let newTag = `TAG-${tagNum}`;
+    while (devices.some(d => d.tag === newTag)) {
+      tagNum++;
+      newTag = `TAG-${tagNum}`;
+    }
+
+    let nameNum = devices.length + 1;
+    let newProfinetName = `device-${nameNum}`;
+    while (devices.some(d => d.network.profinetName === newProfinetName)) {
+      nameNum++;
+      newProfinetName = `device-${nameNum}`;
+    }
+
+    const newId = uuidv4();
+    const copiedPorts = source.ports.map(p => ({ ...p }));
+
+    const duplicated: Device = {
+      ...source,
+      id: newId,
+      name: `${source.name} (Copy)`,
+      tag: newTag,
+      x: source.x + 40,
+      y: source.y + 40,
+      ports: copiedPorts,
+      network: {
+        ...source.network,
+        ipAddress: nextIp,
+        profinetName: newProfinetName,
+      },
+      metadata: {
+        ...source.metadata
+      }
+    };
+
+    set(state => ({
+      devices: [...state.devices, duplicated],
+      selectedId: newId
+    }));
   },
 
   updateDevice: (id, updates) => set(state => ({

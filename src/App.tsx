@@ -4,7 +4,8 @@ import {
   Search, Grid3X3, Layers, AlertCircle, 
   ChevronRight, Box, Cpu, Network, Zap, 
   Activity, Server, Boxes, MousePointer2,
-  Download, Image as ImageIcon, FileText
+  Download, Image as ImageIcon, FileText,
+  Copy
 } from 'lucide-react';
 import { useStore } from './store';
 import { DEVICE_TEMPLATES, DeviceTemplate } from './deviceTemplates';
@@ -16,7 +17,7 @@ import jsPDF from 'jspdf';
 // --- Sub-components ---
 
 const Toolbar = () => {
-  const { toggleGrid, showGrid, devices, connections, clearProject } = useStore();
+  const { toggleGrid, showGrid, devices, connections, clearProject, projectName, setProjectName } = useStore();
   
   const handleClear = () => {
     if (confirm('Are you sure you want to clear the entire project?')) {
@@ -25,12 +26,11 @@ const Toolbar = () => {
   };
 
   const exportAsImage = () => {
-    // Basic implementation using stage toDataURL
     const stage = (window as any).canvasStage;
     if (stage) {
       const dataURL = stage.toDataURL();
       const link = document.createElement('a');
-      link.download = 'network-diagram.png';
+      link.download = `${projectName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'network-diagram'}.png`;
       link.href = dataURL;
       document.body.appendChild(link);
       link.click();
@@ -43,9 +43,9 @@ const Toolbar = () => {
     if (stage) {
       const pdf = new jsPDF('l', 'px', [stage.width(), stage.height()]);
       pdf.setTextColor('#000000');
-      pdf.text('Industrial Network Diagram', 20, 20);
+      pdf.text(projectName || 'Industrial Network Diagram', 20, 20);
       pdf.addImage(stage.toDataURL(), 'PNG', 0, 40, stage.width(), stage.height());
-      pdf.save('network-diagram.pdf');
+      pdf.save(`${projectName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'network-diagram'}.pdf`);
     }
   };
 
@@ -56,10 +56,19 @@ const Toolbar = () => {
           <div className="w-8 h-8 bg-[#00A859] rounded flex items-center justify-center text-black font-bold">
             📐
           </div>
-          <h1 className="text-xs font-semibold tracking-wider uppercase text-neutral-100">
-            Industrial Network Designer 
-            <span className="text-neutral-500 font-normal ml-3">/ Project_H2_Refinery</span>
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xs font-semibold tracking-wider uppercase text-neutral-100 whitespace-nowrap">
+              Industrial Network Designer 
+            </h1>
+            <span className="text-neutral-500 font-normal">/</span>
+            <input 
+              type="text" 
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="bg-transparent text-xs font-bold text-neutral-300 border-b border-neutral-800 hover:border-neutral-600 focus:border-[#00A859] focus:outline-none transition-colors px-1 py-0.5 max-w-[240px] font-mono tracking-wider"
+              title="Click to rename project"
+            />
+          </div>
         </div>
         <div className="h-6 w-px bg-neutral-800" />
         <div className="flex items-center gap-1">
@@ -158,7 +167,7 @@ const LibrarySidebar = () => {
 };
 
 const PropertiesSidebar = () => {
-  const { selectedId, devices, connections, updateDevice, removeDevice, removeConnection } = useStore();
+  const { selectedId, devices, connections, updateDevice, removeDevice, removeConnection, duplicateDevice } = useStore();
   
   const selectedDevice = devices.find(d => d.id === selectedId);
   const selectedConnection = connections.find(c => c.id === selectedId);
@@ -180,12 +189,22 @@ const PropertiesSidebar = () => {
       <aside className="w-80 border-l border-neutral-800 bg-[#111] flex flex-col shrink-0 overflow-y-auto">
         <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/50">
           <h3 className="font-bold text-neutral-100 text-[10px] uppercase tracking-widest">Device Inspector</h3>
-          <button 
-            onClick={() => removeDevice(selectedDevice.id)}
-            className="p-1.5 hover:bg-red-950/20 text-neutral-600 hover:text-red-500 rounded transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button 
+              onClick={() => duplicateDevice(selectedDevice.id)}
+              className="p-1.5 hover:bg-neutral-800 text-neutral-400 hover:text-[#00A859] rounded transition-colors"
+              title="Duplicate Device"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => removeDevice(selectedDevice.id)}
+              className="p-1.5 hover:bg-red-950/20 text-neutral-600 hover:text-red-500 rounded transition-colors"
+              title="Delete Device"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         
         <div className="p-5 space-y-6">
@@ -244,11 +263,51 @@ const PropertiesSidebar = () => {
 
             <div>
               <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2">Connectivity Matrix</label>
-              <div className="space-y-1">
-                {selectedDevice.ports.map(port => (
+              <div className="space-y-2">
+                {selectedDevice.ports.map((port, idx) => (
                   <div key={port.id} className="flex items-center justify-between p-2 rounded bg-neutral-900 border border-neutral-800">
-                    <span className="text-[10px] font-bold text-neutral-300">{port.name}</span>
-                    <span className="text-[9px] bg-neutral-800 text-neutral-500 px-1.5 py-0.5 rounded font-bold">{port.type}</span>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-neutral-300">{port.name}</span>
+                      <span className="text-[9px] text-[#00A859] font-mono leading-none mt-0.5">{port.type}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-neutral-600 font-bold uppercase">Side:</span>
+                      <button
+                        onClick={() => {
+                          const updatedPorts = [...selectedDevice.ports];
+                          const currentSide = port.side || 'left';
+                          const nextSide: 'left' | 'right' | 'bottom' = 
+                            currentSide === 'left' ? 'right' : currentSide === 'right' ? 'bottom' : 'left';
+                          updatedPorts[idx] = {
+                            ...port,
+                            side: nextSide
+                          };
+
+                          const leftPorts = updatedPorts.filter((p: any) => p.side === 'left');
+                          const rightPorts = updatedPorts.filter((p: any) => p.side === 'right');
+                          const bottomPorts = updatedPorts.filter((p: any) => p.side === 'bottom');
+                          const maxVerticalPorts = Math.max(leftPorts.length, rightPorts.length);
+                          const minHeight = 85 + maxVerticalPorts * 24 + (bottomPorts.length > 0 ? 30 : 18);
+                          const finalHeight = Math.max(140, minHeight);
+
+                          updateDevice(selectedDevice.id, { 
+                            ports: updatedPorts,
+                            height: finalHeight
+                          });
+                        }}
+                        className={cn(
+                          "px-2 py-0.5 text-[8px] font-bold rounded border uppercase tracking-widest transition-all",
+                          port.side === 'right' 
+                            ? "bg-[#003311] border-[#00A859]/30 text-[#00cc00] hover:bg-[#004d1a]" 
+                            : port.side === 'bottom'
+                            ? "bg-amber-950/20 border-amber-600/30 text-amber-500 hover:bg-amber-900/30"
+                            : "bg-neutral-850 hover:bg-neutral-800 border-neutral-700 text-neutral-400"
+                        )}
+                        title="Toggle port alignment side (Left -> Right -> Bottom)"
+                      >
+                        {port.side === 'bottom' ? 'Bottom' : port.side === 'right' ? 'Right' : 'Left'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -300,6 +359,91 @@ const PropertiesSidebar = () => {
 
 const GRID_SIZE = 20;
 
+// Shared Helper to precisely calculate Port Coordinates based on Side layout (Left / Right / Bottom)
+const getPortCoordInside = (device: Device, port: Port | undefined) => {
+  if (!port) return { x: device.x, y: device.y, side: 'left' as const };
+  const side = port.side || 'left';
+  const leftPorts = device.ports.filter(p => !p.side || p.side === 'left');
+  const rightPorts = device.ports.filter(p => p.side === 'right');
+  const bottomPorts = device.ports.filter(p => p.side === 'bottom');
+
+  if (side === 'right') {
+    const idx = rightPorts.findIndex(p => p.id === port.id);
+    const portIdx = idx !== -1 ? idx : 0;
+    return {
+      x: device.x + device.width,
+      y: device.y + 85 + portIdx * 24,
+      side
+    };
+  } else if (side === 'bottom') {
+    const idx = bottomPorts.findIndex(p => p.id === port.id);
+    const portIdx = idx !== -1 ? idx : 0;
+    const spacing = device.width / (bottomPorts.length + 1);
+    return {
+      x: device.x + spacing * (portIdx + 1),
+      y: device.y + device.height,
+      side
+    };
+  } else {
+    const idx = leftPorts.findIndex(p => p.id === port.id);
+    const portIdx = idx !== -1 ? idx : 0;
+    return {
+      x: device.x,
+      y: device.y + 85 + portIdx * 24,
+      side
+    };
+  }
+};
+
+// Computes 90-degree orthogonal path around device boxes to avoid cross-body intersections
+const computeOrthogonalRoute = (
+  startX: number,
+  startY: number,
+  startSide: 'left' | 'right' | 'bottom',
+  endX: number,
+  endY: number,
+  endSide: 'left' | 'right' | 'bottom'
+): number[] => {
+  const d = 20;
+
+  const getExitPoint = (x: number, y: number, side: 'left' | 'right' | 'bottom') => {
+    if (side === 'left') return { x: x - d, y };
+    if (side === 'right') return { x: x + d, y };
+    return { x, y: y + d }; // bottom
+  };
+
+  const p1 = { x: startX, y: startY };
+  const p2 = { x: endX, y: endY };
+  const p1Exit = getExitPoint(startX, startY, startSide);
+  const p2Exit = getExitPoint(endX, endY, endSide);
+
+  const points: number[] = [p1.x, p1.y, p1Exit.x, p1Exit.y];
+
+  if ((startSide === 'left' || startSide === 'right') && (endSide === 'left' || endSide === 'right')) {
+    // Both horizontal ports: find mid-point between their outer exits and clear vertical path
+    const xMid = (p1Exit.x + p2Exit.x) / 2;
+    points.push(xMid, p1Exit.y);
+    points.push(xMid, p2Exit.y);
+  } else if (startSide === 'bottom' && endSide === 'bottom') {
+    // Both bottom ports: drop down, run horizontal, and climb back up
+    const yMid = Math.max(p1Exit.y, p2Exit.y) + d;
+    points.push(p1Exit.x, yMid);
+    points.push(p2Exit.x, yMid);
+  } else {
+    // One horizontal, one vertical (bottom): make a direct 90-degree corner
+    if (startSide === 'bottom') {
+      points.push(p1Exit.x, p2Exit.y);
+    } else {
+      points.push(p2Exit.x, p1Exit.y);
+    }
+  }
+
+  points.push(p2Exit.x, p2Exit.y);
+  points.push(p2.x, p2.y);
+
+  return points;
+};
+
 const DeviceNode = ({ device, onPortClick }: { device: Device, onPortClick: (portId: string) => void }) => {
   const { setSelectedId, updateDevice, selectedId } = useStore();
   const isSelected = selectedId === device.id;
@@ -333,11 +477,32 @@ const DeviceNode = ({ device, onPortClick }: { device: Device, onPortClick: (por
         shadowOpacity={0.5}
       />
       
+      {/* Top Header / IP Tag Area */}
+      <Rect 
+         x={0} 
+         y={0} 
+         width={device.width} 
+         height={22} 
+         fill="#111" 
+         cornerRadius={[4, 4, 0, 0]} 
+         stroke="#222"
+         strokeWidth={0.5}
+      />
+      <Text
+        text={device.network.ipAddress}
+        x={12}
+        y={7}
+        fontSize={8.5}
+        fontFamily="JetBrains Mono, monospace"
+        fontStyle="bold"
+        fill="#00A859"
+      />
+
       {/* Sub-header Area */}
       <Text
         text={device.category.toUpperCase()}
         x={12}
-        y={12}
+        y={32}
         fontSize={8}
         fontFamily="JetBrains Mono, monospace"
         fontStyle="bold"
@@ -349,7 +514,7 @@ const DeviceNode = ({ device, onPortClick }: { device: Device, onPortClick: (por
       <Text
         text={device.name}
         x={12}
-        y={28}
+        y={46}
         fontSize={12}
         fontFamily="system-ui, sans-serif"
         fontStyle="bold"
@@ -360,17 +525,55 @@ const DeviceNode = ({ device, onPortClick }: { device: Device, onPortClick: (por
       <Text
         text={device.tag}
         x={12}
-        y={44}
+        y={62}
         fontSize={10}
         fontFamily="JetBrains Mono, monospace"
         fill="#777"
       />
 
       {/* Ports Interface */}
-      {device.ports.map((port, idx) => {
-        const portY = 72 + idx * 24;
+      {device.ports.map((port) => {
+        const leftPorts = device.ports.filter(p => !p.side || p.side === 'left');
+        const rightPorts = device.ports.filter(p => p.side === 'right');
+        const bottomPorts = device.ports.filter(p => p.side === 'bottom');
+
+        let portX = 0;
+        let portY = 0;
+        let align: 'left' | 'right' | 'center' = 'left';
+        let textX = 0;
+        let textY = 0;
+        let textWidth = 100;
+
+        if (port.side === 'right') {
+          const idx = rightPorts.findIndex(p => p.id === port.id);
+          const portIdx = idx !== -1 ? idx : 0;
+          portX = device.width;
+          portY = 85 + portIdx * 24;
+          align = 'right';
+          textX = -112;
+          textY = -4;
+        } else if (port.side === 'bottom') {
+          const idx = bottomPorts.findIndex(p => p.id === port.id);
+          const portIdx = idx !== -1 ? idx : 0;
+          const spacing = device.width / (bottomPorts.length + 1);
+          portX = spacing * (portIdx + 1);
+          portY = device.height;
+          align = 'center';
+          textX = -40;
+          textY = -18;
+          textWidth = 80;
+        } else {
+          const idx = leftPorts.findIndex(p => p.id === port.id);
+          const portIdx = idx !== -1 ? idx : 0;
+          portX = 0;
+          portY = 85 + portIdx * 24;
+          align = 'left';
+          textX = 12;
+          textY = -4;
+        }
+
         return (
-          <Group key={port.id} y={portY}>
+          <Group key={port.id} x={portX} y={portY}>
             <Circle
               x={0}
               y={0}
@@ -397,32 +600,18 @@ const DeviceNode = ({ device, onPortClick }: { device: Device, onPortClick: (por
             />
             <Text
               text={port.label}
-              x={12}
-              y={-4}
+              x={textX}
+              y={textY}
               fontSize={8}
               fontFamily="JetBrains Mono, monospace"
               fontStyle="bold"
               fill="#666"
+              width={textWidth}
+              align={align}
             />
           </Group>
         );
       })}
-
-      {/* Networking Overlay */}
-      <Rect 
-         x={0} y={device.height - 20} 
-         width={device.width} height={20} 
-         fill="#111" cornerRadius={[0, 0, 4, 4]} 
-      />
-      <Text
-        text={device.network.ipAddress}
-        x={12}
-        y={device.height - 14}
-        fontSize={9}
-        fontFamily="JetBrains Mono, monospace"
-        fontStyle="bold"
-        fill="#00A859"
-      />
     </Group>
   );
 };
@@ -435,31 +624,41 @@ const ConnectionLine = ({ connection }: { connection: Connection }) => {
 
   if (!fromDevice || !toDevice) return null;
 
-  const fromIdx = fromDevice.ports.findIndex(p => p.id === connection.fromPortId);
-  const toIdx = toDevice.ports.findIndex(p => p.id === connection.toPortId);
+  const fromPort = fromDevice.ports.find(p => p.id === connection.fromPortId);
+  const toPort = toDevice.ports.find(p => p.id === connection.toPortId);
 
-  const startX = fromDevice.x;
-  const startY = fromDevice.y + 72 + (fromIdx !== -1 ? fromIdx : 0) * 24;
-  const endX = toDevice.x;
-  const endY = toDevice.y + 72 + (toIdx !== -1 ? toIdx : 0) * 24;
+  const fromCoord = getPortCoordInside(fromDevice, fromPort);
+  const toCoord = getPortCoordInside(toDevice, toPort);
+
+  const startSide = fromPort?.side || 'left';
+  const endSide = toPort?.side || 'left';
+
+  const routePoints = computeOrthogonalRoute(
+    fromCoord.x,
+    fromCoord.y,
+    startSide,
+    toCoord.x,
+    toCoord.y,
+    endSide
+  );
 
   return (
     <Group onClick={() => setSelectedId(connection.id)}>
       {/* Interaction Buffer */}
       <Line
-        points={[startX, startY, endX, endY]}
+        points={routePoints}
         stroke="transparent"
         strokeWidth={15}
       />
       {/* Glow Effect for Profinet */}
       <Line
-        points={[startX, startY, endX, endY]}
+        points={routePoints}
         stroke="#00A859"
         strokeWidth={isSelected ? 6 : 4}
         opacity={isSelected ? 0.3 : 0.1}
       />
       <Line
-        points={[startX, startY, endX, endY]}
+        points={routePoints}
         stroke="#00A859"
         strokeWidth={2}
         shadowColor="#00A859"
@@ -547,11 +746,10 @@ export default function App() {
   const getPortPosition = (deviceId: string, portId: string) => {
     const device = devices.find(d => d.id === deviceId);
     if (!device) return { x: 0, y: 0 };
-    const portIdx = device.ports.findIndex(p => p.id === portId);
-    return {
-      x: device.x,
-      y: device.y + 72 + (portIdx !== -1 ? portIdx : 0) * 24
-    };
+    const port = device.ports.find(p => p.id === portId);
+    if (!port) return { x: device.x, y: device.y };
+    const coord = getPortCoordInside(device, port);
+    return { x: coord.x, y: coord.y };
   };
 
   return (
