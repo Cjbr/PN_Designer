@@ -1,0 +1,6 @@
+{
+  "name": "Industrial Network Diagram Designer",
+  "description": "Professional engineering tool for designing industrial communication networks (Profinet, Ethernet/IP) with auto-IP and validation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
